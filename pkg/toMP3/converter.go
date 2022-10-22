@@ -3,20 +3,16 @@ package converter
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const (
 	tplDIR_FAKE = "files"
 	tplDIR_REAL = "output"
-
-	pthFFMPEG = "/usr/local/opt/ffmpeg/bin" // I have FFmpeg installed
-	binFFMPEG = "ffmpeg"                    // with homebrew as `brew install ffmpeg`
+	tplEXT_NEW  = ".mp3"
 )
 
 type conv struct {
@@ -27,28 +23,30 @@ type conv struct {
 }
 
 func New(pth string) *conv {
-	c := conv{}
-	c.Done = make(chan bool)
-	c.pth = pth
+	c := conv{
+		Done: make(chan bool),
+		pth:  pth,
+	}
+	_ = dir.getApp()
 	return &c
 }
 
 func (c *conv) Check() bool {
 	var (
 		fin      = c.pth
-		setError = func() bool {
-			c.Err = fmt.Errorf("file path error, for '%s', at %v", c.pth, time.Now())
+		setError = func(num int) bool {
+			c.Err = fmt.Errorf("file path error, for '%s' [%d]", c.pth, num)
 			return false
 		}
 	)
 
 	if fin == "" {
-		return setError()
+		return setError(1)
 	}
 
 	lst := strings.Split(fin, "/")
 	if len(lst) < 2 {
-		return setError()
+		return setError(2)
 	}
 	val := strings.TrimSpace(lst[0])
 	if val == "." || val == "" { // remove first element if it '.' or empty
@@ -56,16 +54,16 @@ func (c *conv) Check() bool {
 	}
 	lst[0] = tplDIR_REAL // replace user entry for static files with real dir name
 
-	fl, err := os.Executable()
-	if err != nil {
-		log.Println(err)
-		return setError()
+	if err := dir.getApp(); err != nil {
+		c.Info = append(c.Info, err.Error())
+	} else {
+		lst = append([]string{dir.app}, lst...) // prepend exec. path
+
 	}
-	lst = append([]string{filepath.Dir(fl)}, lst...) // prepend exec. path
-	fin = filepath.Join(lst...)                      // make file path as string
+	fin = filepath.Join(lst...) // make file path as string
 
 	if _, err := os.Stat(fin); errors.Is(err, os.ErrNotExist) {
-		return setError()
+		return setError(3)
 	}
 
 	c.pth = fin
@@ -81,9 +79,17 @@ func (c *conv) Run() string {
 		c.Info = append(c.Info, msg)
 
 		// replace current extention by '.mp3'
-		out := filepath.Join(pth, (fl[0:len(fl)-len(filepath.Ext(fl))] + ".mp3"))
+		out := filepath.Join(pth, (fl[0:len(fl)-len(filepath.Ext(fl))] + tplEXT_NEW))
 
-		cmd := exec.Command(filepath.Join(pthFFMPEG, binFFMPEG), []string{
+		ffmpeg, err := dir.getFFmpeg()  // need to check error
+		if ffmpeg == "" && err != nil { // because could be no FFmpeg installed
+			c.Info = append(c.Info, err.Error())
+			c.Err = err
+			c.done()
+			return
+		}
+
+		cmd := exec.Command(ffmpeg, []string{
 			"-hide_banner",
 			"-i", fin,
 			"-y", out}...)
@@ -94,12 +100,61 @@ func (c *conv) Run() string {
 		if err := cmd.Run(); err != nil {
 			c.Info = append(c.Info, err.Error())
 		}
+
 		c.Info = append(c.Info, fmt.Sprintf("OUT:\n%s\n", output))
-		c.Done <- true
-		close(c.Done)
+		c.done()
 	}
 
 	msg := "gonna run FFmpeg"
 	go runner(msg)
 	return fmt.Sprintf("INFO: %s", msg)
+}
+
+func (c *conv) done() {
+	c.Done <- true
+	close(c.Done)
+}
+
+var (
+	dir defPath
+)
+
+type defPath struct {
+	app    string
+	ffmpeg string
+}
+
+func (d *defPath) getApp() error {
+	if d.app != "" {
+		return nil
+	}
+
+	fl, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	d.app = filepath.Dir(fl)
+	return nil
+}
+
+func (d *defPath) getFFmpeg() (string, error) {
+	if d.ffmpeg != "" {
+		return d.ffmpeg, nil
+	}
+
+	// FIXME: this is not for POSIX
+	cmd := exec.Command("which", "ffmpeg")
+	output, _ := cmd.CombinedOutput()
+
+	err := cmd.Run()
+
+	// FIXME: do not work with '\r\n' (Win)
+	d.ffmpeg = strings.TrimSuffix(string(output), "\n")
+
+	if d.ffmpeg == "" {
+		return "", fmt.Errorf("cannot find FFmpeg")
+	}
+
+	return d.ffmpeg, err
 }

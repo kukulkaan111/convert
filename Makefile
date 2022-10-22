@@ -2,6 +2,8 @@ info:
 	@echo 'make app binary: bin (b), release (r), debug (d)'
 	@echo 'test with data: test'
 
+all: debug release
+
 done:
 	@echo '- - -'
 	@echo 'DONE.'
