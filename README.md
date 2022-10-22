@@ -1,22 +1,21 @@
 # TASK
 
-- need app which will convert WAV file to MP3 with preinstaller ffmpeg
+- need app which will convert WAV file to MP3 with preinstalled FFmpeg
 
-- module for convert must be reusable module
+- module which convert must be reusable & not lock parent if convertion will take logn time
 
-<br><hr>
 
 ## HOW TO RUN
-- command line interface: `app -f path`
+- command line interface: `cmd -f path`
 
 ```bash
-./app -f /files/file.wav
+./cmd -f /files/file.wav
 ```
 ```bash
-./app -f ./files/file.wav
+./cmd -f ./files/file.wav
 ```
 ```bash
-./app -f files/file.wav
+./cmd -f files/file.wav
 ```
 - ffmpeg can be preinstalled with `brew install ffmeg`
 
@@ -69,7 +68,7 @@ DONE.
 ```
 ```bash
 % t 3
-.
+
 ├── app
 │  ├── output
 │  │  ├── alef.mp3
